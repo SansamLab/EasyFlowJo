@@ -1,0 +1,13 @@
+name: EasyFlowJo
+title: EasyFlowJo
+username:
+account: sansamlab2
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 5535142
+bundleId: 5549650
+url: https://sansamlab2.shinyapps.io/EasyFlowJo/
+when: 1644176520.73635
+lastSyncTime: 1644176520.73636
+asMultiple: FALSE
+asStatic: FALSE
