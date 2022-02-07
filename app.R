@@ -25,7 +25,7 @@ ui <-  fluidPage(
   tabPanel("Instructions",
     h1("EasyFlowJo Usage Instructions"),
     h2("Motivation"),
-    p("The purpose of this shiny app is to easily calculate background subtracted values from flow cytometry data. Once the conversions are made, you can save the data in the form of a .rds file, which can be loaded into R for statistical analysis and plotting."),
+    p("The purpose of this shiny app is to easily calculate background subtracted values from bivariate cell cycle flow cytometry data. Once the conversions are made, you can save the data in the form of a .rds file, which can be loaded into R for statistical analysis and plotting."),
     h2("Test Data"),
     p("You may access test data from github."),
     p("https://github.com/SansamLab/EasyFlowJo"),
