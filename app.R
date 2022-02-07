@@ -17,6 +17,8 @@ ui <-  fluidPage(
      h1("EasyFlowJo"),
   fileInput("ColDatafile", label = h3("ColData File input")),
   fileInput("csvFiles", label = h3(".csv File inputs"),multiple=TRUE),
+  verbatimTextOutput("parentGate"),
+  verbatimTextOutput("gates"),
   uiOutput("download"),
   uiOutput("downloadCode"),
   tableOutput("testTable")),
@@ -66,99 +68,113 @@ server <- function(input, output, session) {
   # make a list of all csv data
   csvList <- metaReactive2({
     req(input$csvFiles)
+    req(coldata())
     metaExpr({
-      csvList <- lapply(..(input$csvFiles$datapath), read.csv)
+      cdata <- ..(coldata())
+      # read csv's
+      csvList <- lapply(..(input$csvFiles$datapath), read.csv) %>%
+      # add ID column
+      lapply(.,function(df){df$ID <- do.call(paste, c(df, sep = "")); df})
+      # name list items
       names(csvList) <- ..(input$csvFiles$name)
-      csvList
-    })
-  })
-
-  # swap out the implementation of csvList for ec2
-  # ec2 <- newExpansionContext()
-  # ec2$substituteMetaReactive(csvList, function() {
-  #   pname <- input$ColDatafile$datapath
-  #   metaExpr(read.csv("coldata.csv"))
-  # })
-
-  csvList2 <- metaReactive2({
-    req(input$csvFiles)
-    metaExpr({
-      csvList <- lapply(..(csvList()), function(df) {
-        cdata <- ..(coldata())
+      # add filename and gate columns
+      csvList <- lapply(names(csvList),function(nme){
+        df <- csvList[[nme]]
+        df$gate <- gsub(".csv","",nme,ignore.case=T)%>%gsub("^(.*[_])","",.)
+        df$csvFilename <- nme
+        # add column with original .fcs filename
+        fcsFilename <- gsub("([^_]+$)", ".fcs", ignore.case = T, perl = T, nme)
+        df$fcsFilename <- gsub("_.fcs", ".fcs", ignore.case = T, perl = T, fcsFilename)
+        df$fcsFilename <- gsub("export_", "", ignore.case = T, perl = T, df$fcsFilename)
+        df
+      })
+      # rename DNA and y axis columns to x and y
+      csvList <- lapply(csvList,function(df){
         DNAChannel <- gsub("-", ".", cdata$DNAchanel[1])
         YChannel <- gsub("-", ".", cdata$yaxischannel[1])
         names(df) <- gsub(DNAChannel, "x", names(df))
         names(df) <- gsub(YChannel, "y", names(df))
         df
       })
+      # name list items
+      names(csvList) <- ..(input$csvFiles$name)
       csvList
     })
   })
+
+  parentGate <- metaReactive2({
+    req(coldata())
+    metaExpr({unique(..(coldata())$ParentGate)})
+  })
+
+  gateList <- metaReactive2({
+    req(input$csvFiles)
+    metaExpr(({
+      gsub(".csv","",input$csvFiles$name,ignore.case=T)%>%
+        gsub("^(.*[_])","",.)%>%unique()%>%.[-which(.==..(parentGate()))]
+    }))
+  })
+
+  # addIDColumn <- function(csvList){
+  #   lapply(csvList,function(df){
+  #     df$ID <- do.call(paste, c(df, sep = ""))
+  #     df
+  #   })
+  # }
+  #
+  # addGateColumn <- function(csvList){
+  #   lapply(names(csvList),function(nme){
+  #     df <- csvList[[nme]]
+  #     df$gate <- gsub(".csv","",nme,ignore.case=T)%>%gsub("^(.*[_])","",.)
+  #     df
+  #   })
+  # }
+
+
+  # csvList2 <- metaReactive2({
+  #   req(input$csvFiles)
+  #   metaExpr({
+  #     csvList <- lapply(..(csvList()), function(df) {
+  #       cdata <- ..(coldata())
+  #       # add ID column
+  #       df$ID <- do.call(paste, c(df, sep = ""))
+  #       DNAChannel <- gsub("-", ".", cdata$DNAchanel[1])
+  #       YChannel <- gsub("-", ".", cdata$yaxischannel[1])
+  #       names(df) <- gsub(DNAChannel, "x", names(df))
+  #       names(df) <- gsub(YChannel, "y", names(df))
+  #       df
+  #     })
+  #     csvList
+  #   })
+  # })
 
 
   # merge the data tables. this metaReactive2 makes a list of dataframes with all channel values and that csvFilename, fcsFilename, and gate columns
   mergedDataTables <- metaReactive2({
     req(csvList())
-    req(input$ColDatafile)
+    req(coldata())
+    req(parentGate())
+    req(gateList())
     metaExpr({
-      mergeDataTables <- function(colData, csvList) {
-        AddFileNameAndGate <- function(csvFilename) {
-          csv <- csvList[[csvFilename]]
-          # add column with filename
-          csv$csvFilename <- csvFilename
-          # add column with original .fcs filename
-          fcsFilename <- gsub("([^_]+$)", ".fcs", ignore.case = T, perl = T, csvFilename)
-          csv$fcsFilename <- gsub("_.fcs", ".fcs", ignore.case = T, perl = T, fcsFilename)
-          csv$fcsFilename <- gsub("export_", "", ignore.case = T, perl = T, csv$fcsFilename)
-          # get gate from text after last underscore
-          gate <- gsub(".*(?=_)", "", perl = T, csvFilename)
-          gate <- gsub(".csv", "", gate)
-          gate <- gsub("_", "", gate)
-          csv$gate <- gate
-          csv
+      # split list of csv's by fcs filename
+      fcsFilenames <- sapply(..(csvList()),function(df){df$fcsFilename[1]})
+      splitCsvList <- split(..(csvList()),f=fcsFilenames)
+      # apply merge over each fcsFilename set
+      mergedCsvList <- lapply(splitCsvList,function(lst){
+        # make vector of gates
+        gates <- sapply(lst,function(df){df$gate[1]})
+        # get parent gate data
+        pGateCsv <- lst[[which(gates==..(parentGate()))]]
+        # substitute gates for each of the child gates
+        for (gte in ..(gateList())) {
+          pGateCsv$gate[match(lst[[which(gates==gte)]]$ID, pGateCsv$ID)] <- gte
         }
-        ParentGate <- unique(colData$ParentGate)
-        G1gate <- unique(colData$G1gate)
-        Sgate <- unique(colData$Sgate)
-
-        makeSubsetFilename <- function(filename, Gate) {
-          basename <- sub(pattern = "(.*)\\..*$", replacement = "\\1", basename(filename))
-          CSVFilename <- paste0("export_", basename, "_", Gate, ".csv")
-          CSVFilename
-        }
-
-        AllFCSFileNames <- unique(c(colData$Control, colData$Treated))
-        AllParentCSVFilenames <- sapply(AllFCSFileNames, makeSubsetFilename, ParentGate)
-        AllG1CSVFilenames <- sapply(AllFCSFileNames, makeSubsetFilename, G1gate)
-        AllSCSVFilenames <- sapply(AllFCSFileNames, makeSubsetFilename, Sgate)
-
-        ParentCSVs <- lapply(AllParentCSVFilenames, AddFileNameAndGate)
-        G1_times <- lapply(AllG1CSVFilenames, function(filename) {
-          csvList[[filename]] %>% .$Time
-        })
-        S_times <- lapply(AllSCSVFilenames, function(filename) {
-          csvList[[filename]] %>% .$Time
-        })
-
-        ParentCSVsWithGates <- lapply(ParentCSVs, function(csv) {
-          csvFilename <- unique(csv$fcsFilename)
-          All_times <- csv$Time
-          G1times <- G1_times[[csvFilename]]
-          S_times <- S_times[[csvFilename]]
-          csv$gate[na.omit(match(S_times, All_times))] <- "S"
-          csv$gate[na.omit(match(G1times, All_times))] <- "G1"
-          csv
-          # (na.omit(match(All_times,G1times)))
-        })
-
-        return(ParentCSVsWithGates)
-      }
-      mergeDataTables(
-        ..(coldata()),
-        ..(csvList2())
-      )
-    })
+        pGateCsv
+      })
+      mergedCsvList
+      })
   })
+
   # generate linear models from the control data. This metaReactive2 makes a list of linear models.
   linearModelsForBackground <- metaReactive2({
     req(coldata())
@@ -229,7 +245,7 @@ server <- function(input, output, session) {
 "#################################################################",
 "##                      load csv files                         ##",
 "#################################################################",
-      invisible(csvList2()),
+      invisible(csvList()),
 "#################################################################",
 "##     make single dataframes with G1 and S events marked      ##",
 "#################################################################",
@@ -249,7 +265,15 @@ server <- function(input, output, session) {
     ))
   })
 
-  output$code <- renderPrint({class(code())})
+  output$parentGate <- renderPrint({
+    req(parentGate())
+    paste("Parent gate:  ",parentGate(),sep="")})
+
+  output$gates <- renderPrint({
+    req(gateList())
+    paste("Gate detected:  ",gateList(),sep="")})
+
+  output$code <- renderPrint({code()})
 
   output$downloadCode <- renderUI({
     req(backgroundSubtracted())
