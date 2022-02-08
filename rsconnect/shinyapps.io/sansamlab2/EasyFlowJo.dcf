@@ -5,9 +5,9 @@ account: sansamlab2
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 5535142
-bundleId: 5552683
+bundleId: 5553589
 url: https://sansamlab2.shinyapps.io/EasyFlowJo/
-when: 1644249108.73639
-lastSyncTime: 1644249108.7364
+when: 1644264079.49112
+lastSyncTime: 1644264079.49113
 asMultiple: FALSE
 asStatic: FALSE

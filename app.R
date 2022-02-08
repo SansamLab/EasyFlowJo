@@ -12,6 +12,13 @@ library(shinymeta)
 
 ############
 ui <-  fluidPage(
+  tags$button(
+    id = 'close',
+    type = "button",
+    class = "btn action-button",
+    onclick = "setTimeout(function(){window.close();},500);",  # close browser
+    "Close window"
+  ),
   tabsetPanel(
    tabPanel("Background Subtract",
      h1("EasyFlowJo"),
@@ -57,6 +64,10 @@ ui <-  fluidPage(
 server <- function(input, output, session) {
   library(magrittr)
 
+  observe({
+    if (input$close > 0) stopApp()                             # stop shiny
+  })
+
   # read colData file
   coldata <- metaReactive2({
     req(input$ColDatafile$datapath)
@@ -66,13 +77,24 @@ server <- function(input, output, session) {
   })
 
   # make a list of all csv data
-  csvList <- metaReactive2({
+  csvListLoad <- metaReactive2({
     req(input$csvFiles)
     req(coldata())
     metaExpr({
       cdata <- ..(coldata())
       # read csv's
-      csvList <- lapply(..(input$csvFiles$datapath), read.csv) %>%
+      csvList <- lapply(..(input$csvFiles$datapath), read.csv)})
+    csvList
+  })
+
+  csvList <- metaReactive2({
+    req(input$csvFiles)
+    req(coldata())
+    req(csvListLoad())
+    metaExpr({
+      cdata <- ..(coldata())
+      # read csv's
+      csvList <- ..(csvListLoad()) %>%
       # add ID column
       lapply(.,function(df){df$ID <- do.call(paste, c(df, sep = "")); df})
       # name list items
@@ -110,7 +132,7 @@ server <- function(input, output, session) {
   gateList <- metaReactive2({
     req(input$csvFiles)
     metaExpr(({
-      gsub(".csv","",input$csvFiles$name,ignore.case=T)%>%
+      gsub(".csv","",..(input$csvFiles$name),ignore.case=T)%>%
         gsub("^(.*[_])","",.)%>%unique()%>%.[-which(.==..(parentGate()))]
     }))
   })
@@ -231,13 +253,14 @@ server <- function(input, output, session) {
     ec$substituteMetaReactive(coldata, function() {
       metaExpr(read.csv(..(input$ColDatafile$name)))
     })
-    ec$substituteMetaReactive(csvList, function() {
+    ec$substituteMetaReactive(csvListLoad, function() {
       metaExpr({csvList <- lapply(..(input$csvFiles$name), read.csv)
       names(csvList) <- ..(input$csvFiles$name)
       csvList})
     })
     formatCode(expandChain(
       .expansionContext = ec,
+      quote(library(magrittr)),
 "#################################################################",
 "##                    load colData file                        ##",
 "#################################################################",
@@ -245,6 +268,7 @@ server <- function(input, output, session) {
 "#################################################################",
 "##                      load csv files                         ##",
 "#################################################################",
+      invisible(csvListLoad()),
       invisible(csvList()),
 "#################################################################",
 "##     make single dataframes with G1 and S events marked      ##",
